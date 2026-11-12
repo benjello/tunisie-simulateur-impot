@@ -9,7 +9,7 @@
 #
 # Usage :
 #   deploy/shinyapps/push.sh <compte> [nom-app]
-#   ex : deploy/shinyapps/push.sh benjello simulateur-paie-tunisie
+#   ex : deploy/shinyapps/push.sh benjello simulateur-impot-tunisie
 #
 set -euo pipefail
 
@@ -17,7 +17,7 @@ set -euo pipefail
 # --name <compte>` (ici : benjello). On utilise --name (pas --account) pour que
 # rsconnect réutilise le token/secret déjà stockés, sans les redemander.
 COMPTE="${1:?Usage: push.sh <compte> [nom-app]}"
-APPNAME="${2:-simulateur-paie-tunisie}"
+APPNAME="${2:-simulateur-impot-tunisie}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUNDLE="$(mktemp -d)"

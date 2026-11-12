@@ -24,10 +24,10 @@ jobs:
       - name: Vérifier la synchro des agents
         run: bash scripts/deploy_agents.sh --check
 
-      - name: Tests YAML OpenFisca (paie)
-        run: uv run openfisca test tests/paie/ -c openfisca_tunisia
+      - name: Tests YAML OpenFisca (IRPP)
+        run: uv run openfisca test tests/irpp/ -c openfisca_tunisia
 
-      - name: Tests pytest (inversion net→brut, mode local)
+      - name: Tests pytest du client (mode local)
         env:
           OPENFISCA_MODE: local
         run: uv run python -m pytest tests/ -q
