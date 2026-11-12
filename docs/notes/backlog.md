@@ -39,5 +39,15 @@ conversation d'agent ou une liste de session.
   `scripts/set_shinyapps_secrets.sh` (lit `.env`, gitignoré). Reste à **créer le
   repo GitHub `benjello/tunisie-simulateur-impot`, pousser les secrets et
   valider un premier déploiement**.
+- **BLOQUÉ — quota shinyapps.io.** Repo GitHub créé
+  (`benjello/tunisie-simulateur-impot`), secrets `SHINYAPPS_*` posés, CI verte,
+  workflow `deploy.yml` fonctionnel (authentification shinyapps OK, bundle
+  assemblé). Le déploiement échoue sur :
+  `You have reached the maximum number of applications allowed for your account`
+  — le plan gratuit limite le nombre d'applications et les slots sont déjà
+  pris (paie, pension…). **Pour débloquer** : supprimer/archiver une app
+  shinyapps existante, ou passer à un plan supérieur, puis relancer
+  *Actions → Deploy to shinyapps.io → Run workflow*.
 - Mutualiser l'API OpenFisca entre les trois simulateurs (paie, pension, impôt)
-  plutôt que trois déploiements séparés.
+  plutôt que trois déploiements séparés (réduirait aussi le nombre d'apps
+  shinyapps).
