@@ -1,0 +1,51 @@
+# IRPP annuel — revenus 2024 (barème régime 2017, valable 2017-2024).
+#
+# Valeurs attendues = moteur OpenFisca-Tunisia (droit 2024). Barème :
+#   0–5 000 : 0 % | 5 000–20 000 : 26 % | 20 000–30 000 : 28 %
+#   30 000–50 000 : 32 % | > 50 000 : 35 %
+# Abattement frais professionnels sur salaires : 10 % (plafonné 3 000 DT/an).
+# Voir docs/notes/desaccords.md.
+
+- name: Salarié célibataire — salaire imposable 30000
+  period: 2024
+  absolute_error_margin: 0.01
+  input:
+    salaire_imposable: 30000
+  output:
+    rng: 28000
+    revenu_net_imposable: 28000
+    irpp: 6140
+
+- name: Salarié chef de famille, 2 enfants — salaire imposable 30000
+  period: 2024
+  absolute_error_margin: 0.01
+  input:
+    salaire_imposable: 30000
+    chef_de_famille: true
+    nb_enf: 2
+  output:
+    rng: 28000
+    revenu_net_imposable: 27500
+    irpp: 6000
+
+- name: Commerçant célibataire — BIC 40000
+  period: 2024
+  absolute_error_margin: 0.01
+  input:
+    bic_reel_res: 40000
+  output:
+    rng: 40000
+    revenu_net_imposable: 40000
+    irpp: 9900
+
+- name: Salarié chef de famille — salaire 50000, assurance-vie 2000
+  period: 2024
+  absolute_error_margin: 0.01
+  input:
+    salaire_imposable: 50000
+    prime_assurance_vie: 2000
+    chef_de_famille: true
+  output:
+    rng: 48000.004
+    revenu_net_imposable: 45700.004
+    irpp: 11724.001

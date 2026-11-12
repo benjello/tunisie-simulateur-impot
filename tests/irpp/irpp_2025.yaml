@@ -1,0 +1,18 @@
+# IRPP annuel — revenus 2025 (barème de la loi de finances 2025).
+#
+# Valeurs attendues = moteur OpenFisca-Tunisia (droit 2025). Barème :
+#   0–5 000 : 0 % | 5 000–10 000 : 15 % | 10 000–20 000 : 25 %
+#   20 000–30 000 : 30 % | 30 000–40 000 : 33 % | 40 000–50 000 : 36 %
+#   50 000–70 000 : 38 % | > 70 000 : 40 %
+
+- name: Foyer multi-revenus — salaire 20000 + pension 10000 + capitaux 5000
+  period: 2025
+  absolute_error_margin: 0.01
+  input:
+    salaire_imposable: 20000
+    pension_de_retraite: 10000
+    capm_banq: 5000
+  output:
+    rng: 30500
+    revenu_net_imposable: 30500
+    irpp: 6415
