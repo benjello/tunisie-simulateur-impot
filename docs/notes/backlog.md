@@ -5,13 +5,18 @@ conversation d'agent ou une liste de session.
 
 ## Relais de session — 2026-11-13 (état complet, à ne pas perdre)
 
-**⚠ Tout le travail ci-dessous est sur disque mais NON COMMITTÉ** (git a été
-bloqué par intermittence dans la session). Fichiers modifiés/ajoutés :
-`app/app.py`, `app/openfisca_client.py`, `app/i18n.py`, `app/baremes.py` (nouveau),
-`app/graphs.py` (nouveau), `README.md`, `.github/workflows/deploy.yml`,
-`pyproject.toml`, `deploy/shinyapps/requirements.txt`, `tests/test_client.py`,
-`docs/notes/plan-ameliorations.md` (nouveau), `docs/notes/backlog.md`.
-**À faire dès que git est débloqué (`/toggle-allow-git`) : committer + pousser.**
+**✅ Committé et poussé** (branche `main`) : CI verte, déploiement shinyapps
+réussi, app **en ligne HTTP 200** (https://benjello.shinyapps.io/simulateur-impot-tunisie/).
+Fichiers : `app/app.py`, `app/openfisca_client.py`, `app/i18n.py`,
+`app/baremes.py`, `app/graphs.py`, `README.md`, `.github/workflows/deploy.yml`,
+`deploy/shinyapps/push.sh`, `pyproject.toml`, `deploy/shinyapps/requirements.txt`,
+`tests/test_client.py`, `docs/notes/plan-ameliorations.md`, `docs/notes/backlog.md`.
+NB déploiement : le bundle shinyapps doit inclure **tous** les modules de `app/`
+(baremes.py et graphs.py avaient été oubliés → HTTP 500, corrigé).
+
+**Reste non committé (autre dépôt)** : les fichiers plus-value dans
+`openfisca-tunisia` (paramètres + variable + test YAML), à faire relire,
+committer et **publier en release** pour activer la plus-value en production.
 
 ### Livré et testé cette session (app en ligne : https://benjello.shinyapps.io/simulateur-impot-tunisie/)
 - **Axe A** : CSS (IRPP+CSS+total), décomposition par catégorie + pas-à-pas,
