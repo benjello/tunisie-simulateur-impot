@@ -31,6 +31,8 @@ cp "$ROOT/app/app.py" "$BUNDLE/app_main.py"
 # Modules de l'app.
 cp "$ROOT/app/openfisca_client.py" "$BUNDLE/openfisca_client.py"
 cp "$ROOT/app/i18n.py" "$BUNDLE/i18n.py"
+cp "$ROOT/app/baremes.py" "$BUNDLE/baremes.py"
+cp "$ROOT/app/graphs.py" "$BUNDLE/graphs.py"
 # Dépendances.
 cp "$ROOT/deploy/shinyapps/requirements.txt" "$BUNDLE/requirements.txt"
 # Contrainte de version Python (évite le warning et fige la cible).

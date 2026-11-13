@@ -32,6 +32,8 @@ jobs:
           cp app/app.py                     bundle/app_main.py
           cp app/openfisca_client.py        bundle/openfisca_client.py
           cp app/i18n.py                    bundle/i18n.py
+          cp app/baremes.py                 bundle/baremes.py
+          cp app/graphs.py                  bundle/graphs.py
           cp deploy/shinyapps/requirements.txt bundle/requirements.txt
           echo "3.12" > bundle/.python-version
           ls -1 bundle
