@@ -1,22 +1,14 @@
 """Client de calcul OpenFisca-Tunisia pour le simulateur d'impôt (IRPP).
 
-L'app Shiny ne contient aucune logique fiscale : elle construit une situation
-(un foyer fiscal avec ses revenus catégoriels, sa situation de famille et ses
-déductions) et demande l'IRPP annuel à OpenFisca-Tunisia. OpenFisca reste le
-seul moteur de calcul.
+L'app Shiny ne contient aucune logique fiscale : elle construit une situation de
+foyer fiscal et demande à OpenFisca-Tunisia l'IRPP, la CSS, la décomposition du
+calcul, et des calculs dérivés (taux marginal, simulation inverse, comparateur
+de barèmes, régime forfaitaire, plus-value immobilière). OpenFisca reste le seul
+moteur de calcul.
 
-Deux modes, selon la variable d'environnement OPENFISCA_MODE :
-- "api" (défaut) : poste la situation à l'API web (openfisca serve). Pratique en
-  développement local (API séparée sur OPENFISCA_API_URL).
-- "local" : calcule en direct, dans le même process, via
-  CountryTaxBenefitSystem. Utilisé en déploiement (shinyapps.io) où un seul
-  service tourne : pas d'API HTTP séparée.
-
-Les deux modes consomment le MÊME format de situation JSON ; SimulationBuilder
-sait le lire directement.
-
-En local (mode api), lancer l'API avec :
-    openfisca serve -c openfisca_tunisia -p 5000
+Deux modes (variable d'environnement OPENFISCA_MODE) :
+- "api" (défaut) : poste la situation à l'API web (openfisca serve).
+- "local" : calcule en direct via CountryTaxBenefitSystem (déploiement).
 """
 
 from __future__ import annotations
@@ -25,13 +17,9 @@ import os
 
 import httpx
 
-# URL de l'API OpenFisca (mode "api"). Surchargée par OPENFISCA_API_URL.
 API_URL = os.environ.get("OPENFISCA_API_URL", "http://localhost:5000")
-
-# Mode de calcul : "api" (HTTP) ou "local" (moteur in-process).
 MODE = os.environ.get("OPENFISCA_MODE", "api").lower()
 
-# TaxBenefitSystem chargé paresseusement en mode local (coûteux à l'import).
 _TBS = None
 
 
@@ -44,67 +32,35 @@ def _get_tbs():
     return _TBS
 
 
-def _calculate_local(situation: dict) -> dict:
-    """Calcule en direct via SimulationBuilder et renvoie le résultat au format API.
-
-    Toutes les variables à `None` dans la situation sont calculées et remplies,
-    pour chaque période demandée ; on imite la structure de réponse de l'API.
-    """
-    from openfisca_core.simulations import SimulationBuilder
-
-    tbs = _get_tbs()
-    builder = SimulationBuilder()
-    simulation = builder.build_from_entities(tbs, situation)
-
-    resultat = {k: {} for k in situation}
-    for collection, entites in situation.items():
-        for ident, variables in entites.items():
-            resultat[collection][ident] = {}
-            for variable, periodes in variables.items():
-                if not isinstance(periodes, dict):
-                    # champ non temporel (ex. liste de rôles) : recopié tel quel
-                    resultat[collection][ident][variable] = periodes
-                    continue
-                resultat[collection][ident][variable] = {}
-                for periode, valeur in periodes.items():
-                    if valeur is None:
-                        calcule = simulation.calculate(variable, periode)
-                        valeur = float(calcule[0])
-                    resultat[collection][ident][variable][periode] = valeur
-    return resultat
-
-
-def _calculate(situation: dict, *, timeout: float = 30.0) -> dict:
-    """Route le calcul vers l'API HTTP ou le moteur local selon OPENFISCA_MODE."""
-    if MODE == "local":
-        return _calculate_local(situation)
-    reponse = httpx.post(f"{API_URL}/calculate", json=situation, timeout=timeout)
-    reponse.raise_for_status()
-    return reponse.json()
-
-
-# --- Catégories de revenus de l'IRPP tunisien -----------------------------
-#
-# Variable d'entrée (input) qui alimente chaque catégorie, l'entité porteuse et
-# un libellé. Toutes sont saisies ANNUELLEMENT par l'utilisateur ; les variables
-# mensuelles (salaire, pension) sont réparties sur l'année par OpenFisca
-# (set_input_divide_by_period). Chaque catégorie agrège dans le revenu net
-# global `rng` du foyer fiscal.
-#
-# Vérifié par le calcul (openfisca_tunisia, barème 2024/2025) : chaque variable
-# ci-dessous, renseignée seule, fait bien varier `irpp`.
-CATEGORIES_REVENUS = {
+# --- Catégories de revenus (entrée individu, saisies annuellement) ----------
+# Trois niveaux : rapide (grand public), détaillé, avancé. Toutes agrègent dans
+# le revenu net global `rng` du foyer fiscal. Vérifiées par le calcul.
+REVENUS_RAPIDE = {
     "salaire_imposable": "Traitements et salaires (net imposable)",
     "pension_de_retraite": "Pensions et rentes viagères",
-    "bic_reel_res": "Bénéfices industriels et commerciaux (BIC)",
-    "bnc_reel_res_fiscal": "Bénéfices des professions non commerciales (BNC)",
-    "beap_reel_res_fiscal": "Bénéfices agricoles et de pêche (BEAP)",
+}
+REVENUS_DETAILLE = {
+    "bic_reel_res": "Bénéfices industriels et commerciaux (BIC, réel)",
+    "bnc_reel_res_fiscal": "Bénéfices non commerciaux (BNC, réel)",
+    "beap_reel_res_fiscal": "Bénéfices agricoles et de pêche",
     "foncier_forfaitaire_batis_recettes": "Revenus fonciers (bâtis)",
-    "capm_banq": "Revenus de capitaux mobiliers (intérêts)",
+    "capm_banq": "Capitaux mobiliers — intérêts bancaires",
     "salaire_etranger": "Revenus de source étrangère (salaire)",
 }
+REVENUS_AVANCE = {
+    "capm_part": "Capitaux mobiliers — dividendes",
+    "capm_oblig": "Capitaux mobiliers — obligations",
+    "foncier_forfaitaire_non_batis_recettes": "Revenus fonciers (non bâtis)",
+    "bnc_forfaitaire_recettes_brutes": "BNC — forfait d'assiette (recettes)",
+    "pension_etranger_transferee": "Pension étrangère transférée en Tunisie",
+    "pension_etranger_non_transferee": "Pension étrangère non transférée",
+    "autres_revenus_etranger": "Autres revenus de source étrangère",
+}
+CATEGORIES_REVENUS = {**REVENUS_RAPIDE, **REVENUS_DETAILLE, **REVENUS_AVANCE}
 
-# Déductions communes sur le revenu global (variables annuelles, entité Individu).
+# Déductions communes (entrée individu, annuelles). Seules celles dont l'effet
+# est vérifié de façon générale sont exposées (les déductions conditionnelles —
+# comptes spéciaux d'épargne, emprunts obligataires, rente — sont écartées).
 DEDUCTIONS_ANNUELLES = {
     "prime_assurance_vie": "Primes d'assurance-vie",
     "interets_acquisition_logement": "Intérêts crédit logement (habitation principale)",
@@ -114,13 +70,77 @@ DEDUCTIONS_ANNUELLES = {
     "dons": "Dons (fonds de solidarité, etc.)",
 }
 
-# Variables de sortie demandées au moteur (toutes au niveau du foyer fiscal).
+# Revenus par catégorie (sorties intermédiaires, foyer) pour la décomposition.
+CATEGORIES_RNG = {
+    "tspr": "Traitements, salaires, pensions et rentes",
+    "bic": "Bénéfices industriels et commerciaux",
+    "bnc": "Bénéfices non commerciaux",
+    "beap": "Bénéfices agricoles et de pêche",
+    "revenus_fonciers": "Revenus fonciers",
+    "rvcm": "Revenus de capitaux mobiliers",
+    "revenus_source_etrangere": "Revenus de source étrangère",
+}
+
+# Toutes les sorties demandées au moteur (niveau foyer fiscal).
 VARIABLES_SORTIE = [
     "rng",
+    "deduction_famille",
+    "deductions_base",
+    "deductions_investissement",
     "revenu_net_imposable",
+    "assiette_avant_avantages",
+    "impot_avant_avantages",
+    "impot_revenu_brut",
+    "minimum_impot",
     "irpp",
-]
+    "contribution_sociale_solidarite",
+] + list(CATEGORIES_RNG)
 
+
+# --- Moteur -----------------------------------------------------------------
+
+def _calculate_local(situation: dict) -> dict:
+    from openfisca_core.simulations import SimulationBuilder
+
+    tbs = _get_tbs()
+    builder = SimulationBuilder()
+    simulation = builder.build_from_entities(tbs, situation)
+    resultat = {k: {} for k in situation}
+    for collection, entites in situation.items():
+        for ident, variables in entites.items():
+            resultat[collection][ident] = {}
+            for variable, periodes in variables.items():
+                if not isinstance(periodes, dict):
+                    resultat[collection][ident][variable] = periodes
+                    continue
+                resultat[collection][ident][variable] = {}
+                for periode, valeur in periodes.items():
+                    if valeur is None:
+                        valeur = float(simulation.calculate(variable, periode)[0])
+                    resultat[collection][ident][variable][periode] = valeur
+    return resultat
+
+
+def _calculate(situation: dict, *, timeout: float = 30.0) -> dict:
+    if MODE == "local":
+        return _calculate_local(situation)
+    reponse = httpx.post(f"{API_URL}/calculate", json=situation, timeout=timeout)
+    reponse.raise_for_status()
+    return reponse.json()
+
+
+def moteur_supporte(variable: str) -> bool:
+    """Indique si le moteur connaît `variable` (mode local uniquement).
+
+    En mode api, on ne peut pas l'introspecter simplement : on renvoie True et le
+    calcul échouera proprement si la variable manque.
+    """
+    if MODE != "local":
+        return True
+    return variable in _get_tbs().variables
+
+
+# --- Construction de situation + calcul IRPP --------------------------------
 
 def construire_situation(
     *,
@@ -132,21 +152,15 @@ def construire_situation(
     nb_infirme: int = 0,
     nb_parents: int = 0,
     deductions: dict | None = None,
+    sorties: list | None = None,
 ) -> dict:
-    """Construit la situation JSON OpenFisca d'un foyer fiscal pour l'année donnée.
-
-    `revenus` et `deductions` sont des dicts {variable: montant_annuel}. Les
-    charges de famille sont des variables annuelles du foyer fiscal.
-    """
     an = str(annee)
     revenus = revenus or {}
     deductions = deductions or {}
+    sorties = sorties or VARIABLES_SORTIE
 
     individu: dict = {}
-    for variable, montant in revenus.items():
-        if montant:
-            individu[variable] = {an: float(montant)}
-    for variable, montant in deductions.items():
+    for variable, montant in {**revenus, **deductions}.items():
         if montant:
             individu[variable] = {an: float(montant)}
 
@@ -158,7 +172,7 @@ def construire_situation(
         "nb_infirme": {an: nb_infirme},
         "nb_parents": {an: nb_parents},
     }
-    for variable in VARIABLES_SORTIE:
+    for variable in sorties:
         foyer[variable] = {an: None}
 
     return {
@@ -169,32 +183,172 @@ def construire_situation(
 
 
 def calculer_irpp(situation: dict, *, annee: int, timeout: float = 30.0) -> dict:
-    """Poste la situation à l'API (ou calcule en local) et renvoie le détail IRPP.
-
-    Renvoie un dict plat : rng (revenu net global), revenu_net_imposable, irpp,
-    et taux_moyen (irpp / rng). Lève httpx.HTTPError si l'API est injoignable.
+    """Renvoie la décomposition complète : revenus par catégorie, déductions,
+    assiette, impôt barème, minimum, IRPP, CSS, total, taux moyen.
     """
     an = str(annee)
     data = _calculate(situation, timeout=timeout)
     foyer = data["foyers_fiscaux"]["f0"]
+    res = {var: foyer.get(var, {}).get(an) for var in VARIABLES_SORTIE}
 
-    resultat = {var: foyer.get(var, {}).get(an) for var in VARIABLES_SORTIE}
-    rng = resultat.get("rng") or 0.0
-    irpp = resultat.get("irpp") or 0.0
-    resultat["taux_moyen"] = (irpp / rng) if rng > 0 else 0.0
-    return resultat
+    irpp = res.get("irpp") or 0.0
+    css = res.get("contribution_sociale_solidarite") or 0.0
+    rng = res.get("rng") or 0.0
+    res["total_irpp_css"] = irpp + css
+    res["taux_moyen"] = (irpp / rng) if rng > 0 else 0.0
+    res["taux_moyen_avec_css"] = ((irpp + css) / rng) if rng > 0 else 0.0
+    # Le minimum d'impôt (art. 12 bis) ne « mord » que s'il dépasse l'impôt
+    # barème après avantages : on signale alors qu'il est contraignant.
+    res["minimum_contraignant"] = (res.get("minimum_impot") or 0.0) > (irpp + 0.01)
+    return res
+
+
+def _irpp_simple(revenus, famille, annee):
+    """IRPP (seul) pour un jeu de revenus — utilitaire pour marginal/inverse."""
+    situation = construire_situation(
+        annee=annee, revenus=revenus, deductions={}, sorties=["irpp", "rng"], **famille
+    )
+    an = str(annee)
+    data = _calculate(situation)
+    foyer = data["foyers_fiscaux"]["f0"]
+    return (foyer.get("irpp", {}).get(an) or 0.0, foyer.get("rng", {}).get(an) or 0.0)
+
+
+def taux_marginal(revenus: dict, famille: dict, annee: int, *, pas: float = 100.0) -> float:
+    """Taux marginal d'imposition : ΔIRPP / ΔRNG pour un supplément de revenu.
+
+    On augmente le premier revenu non nul (à défaut le salaire) de `pas` dinars
+    et on mesure la variation d'IRPP rapportée à la variation de RNG, ce qui
+    donne le taux de la tranche marginale indépendamment des abattements.
+    """
+    revenus = {k: v for k, v in revenus.items() if v}
+    cible = next(iter(revenus), "salaire_imposable")
+    base_irpp, base_rng = _irpp_simple(revenus, famille, annee)
+    hausse = dict(revenus)
+    hausse[cible] = (hausse.get(cible) or 0.0) + pas
+    haut_irpp, haut_rng = _irpp_simple(hausse, famille, annee)
+    d_rng = haut_rng - base_rng
+    return (haut_irpp - base_irpp) / d_rng if d_rng > 0 else 0.0
+
+
+def inverser_salaire(
+    net_cible: float, *, annee: int, famille: dict, tolerance: float = 0.01, max_iter: int = 60
+) -> dict:
+    """Trouve le salaire imposable dont le revenu net après IRPP+CSS = net_cible.
+
+    Dichotomie sur le seul salaire imposable (autres revenus supposés nuls).
+    """
+    def net_pour(salaire: float) -> dict:
+        situation = construire_situation(
+            annee=annee, revenus={"salaire_imposable": salaire}, **famille
+        )
+        res = calculer_irpp(situation, annee=annee)
+        res["salaire_imposable"] = salaire
+        res["net"] = (res.get("rng") or 0.0) - (res.get("total_irpp_css") or 0.0)
+        return res
+
+    if net_cible <= 0:
+        return net_pour(0.0)
+    bas, haut = 0.0, max(net_cible, 1.0) * 1.6
+    res_haut = net_pour(haut)
+    gardes = 0
+    while res_haut["net"] < net_cible and gardes < 40:
+        haut *= 1.5
+        res_haut = net_pour(haut)
+        gardes += 1
+    dernier = res_haut
+    for _ in range(max_iter):
+        milieu = (bas + haut) / 2.0
+        dernier = net_pour(milieu)
+        if abs(dernier["net"] - net_cible) <= tolerance:
+            break
+        if dernier["net"] < net_cible:
+            bas = milieu
+        else:
+            haut = milieu
+    return dernier
+
+
+def comparer_baremes(
+    *, revenus: dict, famille: dict, deductions: dict, annees: tuple = (2024, 2025)
+) -> dict:
+    """Compare l'IRPP d'un même foyer sous les barèmes de deux années."""
+    sortie = {}
+    for annee in annees:
+        situation = construire_situation(
+            annee=annee, revenus=revenus, deductions=deductions, **famille
+        )
+        sortie[annee] = calculer_irpp(situation, annee=annee)
+    return sortie
+
+
+def calculer_forfaitaire(chiffre_affaires: float, *, annee: int) -> dict:
+    """Impôt du régime forfaitaire BIC (libératoire) pour un chiffre d'affaires."""
+    an = str(annee)
+    situation = {
+        "individus": {"ind0": {}},
+        "menages": {"m0": {"personne_de_reference": ["ind0"]}},
+        "foyers_fiscaux": {
+            "f0": {
+                "declarants": ["ind0"],
+                "chiffre_affaires_soumis_au_forfait": {an: float(chiffre_affaires)},
+                "impot_regime_forfaitaire_du": {an: None},
+            }
+        },
+    }
+    data = _calculate(situation)
+    impot = data["foyers_fiscaux"]["f0"].get("impot_regime_forfaitaire_du", {}).get(an)
+    return {"chiffre_affaires": chiffre_affaires, "impot_forfaitaire": impot}
+
+
+def calculer_plus_value_immobiliere(
+    *, prix_cession: float, prix_acquisition: float, duree_detention: int,
+    frais: float = 0.0, exoneree: bool = False, annee: int,
+) -> dict | None:
+    """Impôt sur la plus-value immobilière (art. 27-28 CIRPP).
+
+    Renvoie None si le moteur ne connaît pas la variable (openfisca-tunisia trop
+    ancien : la fonctionnalité nécessite une version incluant les plus-values).
+    """
+    if not moteur_supporte("impot_plus_value_immobiliere"):
+        return None
+    an = str(annee)
+    foyer = {
+        "declarants": ["ind0"],
+        "plus_value_immobiliere_prix_cession": {an: float(prix_cession)},
+        "plus_value_immobiliere_prix_acquisition": {an: float(prix_acquisition)},
+        "plus_value_immobiliere_frais": {an: float(frais)},
+        "plus_value_immobiliere_duree_detention": {an: int(duree_detention)},
+        "plus_value_immobiliere_exoneree": {an: bool(exoneree)},
+        "plus_value_immobiliere_imposable": {an: None},
+        "impot_plus_value_immobiliere": {an: None},
+    }
+    situation = {
+        "individus": {"ind0": {}},
+        "menages": {"m0": {"personne_de_reference": ["ind0"]}},
+        "foyers_fiscaux": {"f0": foyer},
+    }
+    try:
+        data = _calculate(situation)
+    except httpx.HTTPError:
+        return None
+    f = data["foyers_fiscaux"]["f0"]
+    return {
+        "plus_value_imposable": f.get("plus_value_immobiliere_imposable", {}).get(an),
+        "impot": f.get("impot_plus_value_immobiliere", {}).get(an),
+    }
+
+
+def regularisation(total_du: float, deja_preleve: float) -> dict:
+    """Solde de régularisation annuelle : total dû (IRPP+CSS) − déjà prélevé."""
+    solde = (total_du or 0.0) - (deja_preleve or 0.0)
+    return {"solde": solde, "a_payer": max(solde, 0.0), "a_restituer": max(-solde, 0.0)}
 
 
 def api_disponible(timeout: float = 3.0) -> bool:
-    """Indique si le moteur est prêt (pour un message clair dans l'UI).
-
-    En mode local, le moteur est toujours disponible (calcul in-process). En
-    mode api, on teste la joignabilité de l'API.
-    """
     if MODE == "local":
         return True
     try:
-        reponse = httpx.get(f"{API_URL}/spec", timeout=timeout)
-        return reponse.status_code == 200
+        return httpx.get(f"{API_URL}/spec", timeout=timeout).status_code == 200
     except httpx.HTTPError:
         return False
